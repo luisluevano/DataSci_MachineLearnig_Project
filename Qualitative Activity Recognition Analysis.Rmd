@@ -1,0 +1,69 @@
+---
+title: "Qualitative Activity Recognition Prediction Model"
+author: "Luis Luévano"
+date: "24/05/2015"
+output: html_document
+---
+## Synopsis
+This project aims to build a model to predict how well a routine exercise is being performed by a study subject group. The subjects were asked to perform a weight lift exercise in 6 different ways which 1 of them is correctly done. To measure and track the movements, sensors were used in belt, arm, forearm and dumbbell. Detail data can be found in the [website](http://groupware.les.inf.puc-rio.br/har) where the dataset (that will be use here) comes from.
+
+## Loading and preprocessing the data
+The file containing the data can be found [here](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv). Make sure to set your working directory where the pml-training.csv file is found: setwd("\<directory\>")
+```{r}
+rwDf <- read.csv("pml-training.csv", na.strings = c("NA", "#DIV/0!", "")) # raw data frame
+```
+Please note that "#DIV/0!" and "" (empty string) have been added as part of NA. These were found in an exploratory analysis using *summary* R base function and decided to add logic since the reading phase. 
+
+### Exploratory Analysis
+Using *summary* function (see below command), it is noticeable that we have three main data clean steps to do:
+1. We have variables not needed for the study.
+2. From the potential needed columns, some of them have a great number of NAs.
+3. Due to the nature of the data (body movements measurements around axis) several columns must be correlated.
+```{r, eval=FALSE}
+summary(rwDf) # No results display, too many columns
+```
+
+### Cleaning data
+Select only variables of interest that contains in the name **arm** and **dumbbell** plus the outcome to predict: **classe**.
+```{r}
+tomatch <- paste(c("arm", "dumbbell", "classe"), collapse = "|")
+exDf <- rwDf[, grep(tomatch, colnames(rwDf), value = TRUE)] # excercise data frame
+```
+Lets see the different percentages of NAs in all dataset:
+```{r}
+unique(round(colMeans(is.na(exDf)), 2)) # get mean of NAs rounded by 2 decimals 
+```
+A lot of NAs in single columns, there is no value to imput values on them so is better to remove them:
+```{r}
+exDf <- exDf[, colMeans(is.na(exDf)) == 0] # only if no NAs found
+```
+Checking high correlation:
+```{r}
+M<-abs(cor(exDf[,1:39]))
+diag(M) <- 0
+which(M >= 0.9, arr.ind=T) 
+```
+Remove high correlated variables:
+```{r}
+exDf <- exDf[, !(names(exDf) %in% c("gyros_arm_y", "gyros_forearm_z", "gyros_dumbbell_x"))]
+```
+## Creating the predictive model
+Lets create a train and test data frames using the final dataset of 36 predictors. A 60% train dataset seems reasonable having 19,622 records.
+```{r, message=FALSE}
+library(caret); library(randomForest)
+inTrain = createDataPartition(y = exDf$classe, p = 0.6, list = FALSE)
+training = exDf[inTrain,]
+testing = exDf[-inTrain,]
+```
+Since our predictors are based on sensors, they are subject to noise input. A Random Forest algorithm will allow to decrease the variance caused by these. Lets use the default settings:
+```{r, cache=TRUE}
+modFit <- randomForest(classe~. , data = training)
+```
+Lets see how well it performs:
+```{r}
+confusionMatrix(testing$classe, predict(modFit,testing))
+```
+
+## Conclusions
+The results from our very first model are quite good. The out of sample error is 0.0171, which is the error applied to the testing set given the prediction model. I believe this is enough for our purpose to predict how well a weight lift exercise is being done.
+
